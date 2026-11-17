@@ -1,8 +1,35 @@
 use std::io;
+use std::time::Duration;
 
 use http::StatusCode;
 
 use crate::{ErrorKind, Status};
+
+/// Call `check` until it returns a status which should not be retried, or
+/// until it has been retried `max_retries` times.
+///
+/// Waits `wait_time` before the first retry and doubles the wait time after
+/// each retry (exponential backoff).
+pub(crate) async fn retry_with_backoff<F, Fut>(
+    max_retries: u64,
+    mut wait_time: Duration,
+    mut check: F,
+) -> Status
+where
+    F: FnMut() -> Fut,
+    Fut: Future<Output = Status>,
+{
+    let mut status = check().await;
+    for _ in 0..max_retries {
+        if status.is_success() || !status.should_retry() {
+            break;
+        }
+        tokio::time::sleep(wait_time).await;
+        wait_time = wait_time.saturating_mul(2);
+        status = check().await;
+    }
+    status
+}
 
 /// An extension trait to help determine if a given HTTP request
 /// is retryable.
@@ -146,11 +173,37 @@ fn get_source_error_type<T: std::error::Error + 'static>(
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use http::StatusCode;
 
-    use crate::ErrorKind;
+    use crate::{ErrorKind, Status};
 
-    use super::RetryExt;
+    use super::{RetryExt, retry_with_backoff};
+
+    #[tokio::test]
+    async fn test_retry_with_backoff() {
+        /// The number of times `retry_with_backoff` checks a status
+        async fn checks(max_retries: u64, status: fn() -> Status) -> u64 {
+            let mut checks = 0;
+            retry_with_backoff(max_retries, Duration::ZERO, || {
+                checks += 1;
+                std::future::ready(status())
+            })
+            .await;
+            checks
+        }
+
+        let rate_limited =
+            || Status::Error(ErrorKind::RejectedStatusCode(StatusCode::TOO_MANY_REQUESTS));
+        assert_eq!(checks(2, rate_limited).await, 3);
+        assert_eq!(checks(0, rate_limited).await, 1);
+
+        // Successes and permanent errors are not retried.
+        assert_eq!(checks(2, || Status::Ok(StatusCode::OK)).await, 1);
+        let not_found = || Status::Error(ErrorKind::RejectedStatusCode(StatusCode::NOT_FOUND));
+        assert_eq!(checks(2, not_found).await, 1);
+    }
 
     #[test]
     fn test_should_retry() {

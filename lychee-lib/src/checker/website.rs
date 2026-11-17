@@ -3,7 +3,7 @@ use crate::{
     chain::{Chain, ChainResult, ClientRequestChains, Handler, RequestChain},
     quirks::Quirks,
     ratelimit::HostPool,
-    retry::RetryExt,
+    retry::retry_with_backoff,
     types::{
         redirect_history::{RedirectHistory, Redirects},
         uri::github::GithubUri,
@@ -112,20 +112,10 @@ impl WebsiteChecker {
     /// Note that, in addition, there also is a host-specific backoff
     /// when host-specific rate limiting or errors are detected.
     pub(crate) async fn retry_request(&self, request: Request) -> Status {
-        let mut retries: u64 = 0;
-        let mut wait_time = self.retry_wait_time;
-        let mut status = self.check_default(clone_unwrap(&request)).await;
-        while retries < self.max_retries {
-            if status.is_success() || !status.should_retry() {
-                return status;
-            }
-            retries += 1;
-            tokio::time::sleep(wait_time).await;
-            wait_time = wait_time.saturating_mul(2);
-            status = self.check_default(clone_unwrap(&request)).await;
-        }
-
-        status
+        retry_with_backoff(self.max_retries, self.retry_wait_time, || {
+            self.check_default(clone_unwrap(&request))
+        })
+        .await
     }
 
     /// Check a URI using [reqwest](https://github.com/seanmonstar/reqwest).

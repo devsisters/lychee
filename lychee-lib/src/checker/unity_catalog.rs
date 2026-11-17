@@ -18,7 +18,9 @@ use secrecy::{ExposeSecret, SecretString};
 use serde::Deserialize;
 use url::Url;
 
-use crate::{ErrorKind, Result, Status, Uri, ratelimit::HostPool, retry::RetryExt, sql::TableName};
+use crate::{
+    ErrorKind, Result, Status, Uri, ratelimit::HostPool, retry::retry_with_backoff, sql::TableName,
+};
 
 /// Connection settings for the Unity Catalog API of a Databricks workspace.
 #[derive(Debug, Clone)]
@@ -116,17 +118,10 @@ impl UnityCatalogChecker {
             Err(e) => return e.into(),
         };
 
-        let mut retries = 0;
-        let mut wait_time = self.retry_wait_time;
-        loop {
-            let status = self.check_table(config, &table).await;
-            if status.is_success() || !status.should_retry() || retries >= self.max_retries {
-                return status;
-            }
-            retries += 1;
-            tokio::time::sleep(wait_time).await;
-            wait_time = wait_time.saturating_mul(2);
-        }
+        retry_with_backoff(self.max_retries, self.retry_wait_time, || {
+            self.check_table(config, &table)
+        })
+        .await
     }
 
     async fn check_table(&self, config: &UnityCatalogConfig, table: &TableName) -> Status {
