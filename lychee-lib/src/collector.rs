@@ -209,8 +209,9 @@ impl Collector {
 
     /// Check SQL code blocks in Markdown files (if `Some`).
     ///
-    /// Code which cannot be parsed is returned as a [`RequestError`]. See
-    /// [`crate::sql`] for details.
+    /// Code which cannot be parsed is returned as a [`RequestError`]. With
+    /// [`SqlOptions::unity_catalog_tables`], every referenced table is returned
+    /// as a request for a `uc:` URI. See [`crate::sql`] for details.
     #[must_use]
     pub fn sql_options(mut self, sql_options: Option<SqlOptions>) -> Self {
         self.sql_options = sql_options;

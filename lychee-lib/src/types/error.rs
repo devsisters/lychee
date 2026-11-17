@@ -198,6 +198,34 @@ pub enum ErrorKind {
     /// A SQL code block cannot be parsed
     #[error("SQL syntax error: {0}")]
     InvalidSql(String),
+
+    /// A table referenced in a SQL code block does not exist in Unity Catalog.
+    /// Contains the table name and the reason given by the API (if any).
+    #[error("Table '{0}' not found in Unity Catalog")]
+    UnityCatalogTableNotFound(String, Option<String>),
+
+    /// The Unity Catalog API returned an error
+    #[error("Unity Catalog API error ({status}): {message}")]
+    UnityCatalogApi {
+        /// HTTP status code of the response
+        status: StatusCode,
+        /// Error code and message of the response
+        message: String,
+    },
+
+    /// Unity Catalog tables cannot be checked without a Databricks workspace
+    #[error(
+        "Cannot check tables in Unity Catalog without a Databricks workspace URL and access token"
+    )]
+    MissingUnityCatalogConfig,
+
+    /// The given URI is not a valid `uc:catalog.schema.table` reference
+    #[error("Invalid Unity Catalog table reference: {0}")]
+    InvalidUnityCatalogUri(Uri),
+
+    /// The given Databricks workspace URL is invalid
+    #[error("Invalid Databricks workspace URL '{0}': {1}")]
+    InvalidDatabricksHost(String, String),
 }
 
 impl ErrorKind {
@@ -306,6 +334,21 @@ impl ErrorKind {
 
                 format!("{self}: {details}")
             }
+            ErrorKind::UnityCatalogTableNotFound(_, Some(reason)) => format!("{self}: {reason}"),
+            ErrorKind::UnityCatalogApi { status, .. } if *status == StatusCode::UNAUTHORIZED => {
+                let error = self.to_string();
+                format!(
+                    "{}. Check the Databricks access token",
+                    error.trim_end_matches('.')
+                )
+            }
+            ErrorKind::UnityCatalogApi { status, .. } if *status == StatusCode::FORBIDDEN => {
+                let error = self.to_string();
+                format!(
+                    "{}. The access token needs the BROWSE privilege on the catalog or schema of the table, or USE CATALOG and USE SCHEMA on them and SELECT on the table",
+                    error.trim_end_matches('.')
+                )
+            }
             ErrorKind::InvalidFragment(_)
             | ErrorKind::RejectedStatusCode(_)
             | ErrorKind::InvalidFilePath(_)
@@ -326,6 +369,11 @@ impl ErrorKind {
             | ErrorKind::InvalidUrlHost
             | ErrorKind::RootRelativeLinkWithoutRoot(_)
             | ErrorKind::InvalidSql(_)
+            | ErrorKind::MissingUnityCatalogConfig
+            | ErrorKind::UnityCatalogTableNotFound(_, None)
+            | ErrorKind::UnityCatalogApi { .. }
+            | ErrorKind::InvalidUnityCatalogUri(_)
+            | ErrorKind::InvalidDatabricksHost(_, _)
             | ErrorKind::PreprocessorError {
                 command: _,
                 reason: _,
@@ -408,6 +456,24 @@ impl PartialEq for ErrorKind {
             (Self::EmptyUrl, Self::EmptyUrl) => true,
             (Self::RejectedStatusCode(c1), Self::RejectedStatusCode(c2)) => c1 == c2,
             (Self::InvalidSql(m1), Self::InvalidSql(m2)) => m1 == m2,
+            (Self::UnityCatalogTableNotFound(t1, r1), Self::UnityCatalogTableNotFound(t2, r2)) => {
+                t1 == t2 && r1 == r2
+            }
+            (
+                Self::UnityCatalogApi {
+                    status: s1,
+                    message: m1,
+                },
+                Self::UnityCatalogApi {
+                    status: s2,
+                    message: m2,
+                },
+            ) => s1 == s2 && m1 == m2,
+            (Self::MissingUnityCatalogConfig, Self::MissingUnityCatalogConfig) => true,
+            (Self::InvalidUnityCatalogUri(u1), Self::InvalidUnityCatalogUri(u2)) => u1 == u2,
+            (Self::InvalidDatabricksHost(h1, e1), Self::InvalidDatabricksHost(h2, e2)) => {
+                h1 == h2 && e1 == e2
+            }
 
             _ => false,
         }
@@ -466,6 +532,11 @@ impl Hash for ErrorKind {
             Self::WikilinkNotFound(uri, pathbuf) => (uri, pathbuf).hash(state),
             Self::WikilinkInvalidBase(e) => e.hash(state),
             Self::InvalidSql(message) => message.hash(state),
+            Self::UnityCatalogTableNotFound(table, reason) => (table, reason).hash(state),
+            Self::UnityCatalogApi { status, message } => (status, message).hash(state),
+            Self::MissingUnityCatalogConfig => std::mem::discriminant(self).hash(state),
+            Self::InvalidUnityCatalogUri(uri) => uri.hash(state),
+            Self::InvalidDatabricksHost(host, e) => (host, e).hash(state),
         }
     }
 }

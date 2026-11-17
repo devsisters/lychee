@@ -94,7 +94,9 @@ impl RetryExt for ErrorKind {
         }) = self.github_error()
         {
             source.should_retry()
-        } else if let Self::RejectedStatusCode(code) = self {
+        } else if let Self::RejectedStatusCode(code) | Self::UnityCatalogApi { status: code, .. } =
+            self
+        {
             code.should_retry()
         } else {
             false

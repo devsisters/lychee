@@ -69,6 +69,7 @@ pub(crate) fn create(cfg: &Config, cookie_jar: Option<&Arc<CookieStoreMutex>>) -
         ))
         .basic_auth(basic_auth)
         .hosts(cfg.hosts.clone())
+        .unity_catalog(cfg.unity_catalog_config()?)
         .build()
         .client()
         .context("Failed to create request client")

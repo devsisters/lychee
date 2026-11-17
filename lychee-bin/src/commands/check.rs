@@ -253,7 +253,7 @@ fn get_failed_urls(stats: &mut ResponseStats) -> Vec<(InputSource, Url)> {
         .iter()
         .flat_map(|(source, set)| set.iter().map(move |body| (source, &body.uri)))
         .filter_map(|(source, uri)| {
-            if uri.is_data() || uri.is_mail() || uri.is_file() {
+            if uri.is_data() || uri.is_mail() || uri.is_file() || uri.is_unity_catalog() {
                 None
             } else {
                 match Url::try_from(uri.as_str()) {
@@ -270,6 +270,28 @@ mod tests {
     use super::*;
     use crate::parse::parse_remaps;
     use lychee_lib::{ClientBuilder, ErrorKind, StatusCodeSelector, Uri};
+
+    #[test]
+    fn test_unity_catalog_tables_are_not_looked_up_in_archives() {
+        let mut stats = ResponseStats::default();
+        for uri in ["uc:main.sales.orders", "https://example.com/404"] {
+            stats.add(Response::new(
+                Uri::try_from(uri).unwrap(),
+                Status::Error(ErrorKind::EmptyUrl),
+                None,
+                None,
+                InputSource::Stdin,
+                None,
+                None,
+            ));
+        }
+
+        let failed: Vec<_> = get_failed_urls(&mut stats)
+            .into_iter()
+            .map(|(_, url)| url.to_string())
+            .collect();
+        assert_eq!(failed, ["https://example.com/404"]);
+    }
 
     #[tokio::test]
     async fn test_invalid_url() {
