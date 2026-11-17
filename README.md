@@ -927,8 +927,9 @@ or schema are qualified with preceding `USE` statements in the same file, or
 with `--sql-default-catalog` and `--sql-default-schema`. Otherwise, they are not
 checked. Neither are tables created in the same file (e.g. with
 `CREATE TEMPORARY VIEW`), common table expressions, and names given with
-`IDENTIFIER(...)`. Ignored code blocks don't count: tables they create and their
-`USE` statements are not taken into account.
+`IDENTIFIER(...)`. Ignored code blocks and statements which cannot be parsed
+don't count: tables they create and their `USE` statements are not taken into
+account.
 
 ### Caching
 
