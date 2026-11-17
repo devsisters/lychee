@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 
 pub(crate) mod file;
 pub(crate) mod mail;
+pub(crate) mod unity_catalog;
 pub(crate) mod website;
 pub(crate) mod wikilink;
 

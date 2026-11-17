@@ -116,6 +116,14 @@ impl Uri {
 
     #[inline]
     #[must_use]
+    /// Check if the URI references a Unity Catalog table, like
+    /// `uc:main.sales.orders`. These are extracted from SQL code blocks.
+    pub fn is_unity_catalog(&self) -> bool {
+        self.scheme() == crate::sql::UNITY_CATALOG_SCHEME
+    }
+
+    #[inline]
+    #[must_use]
     /// Returns `true` if this is a loopback address.
     ///
     /// ## IPv4

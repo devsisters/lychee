@@ -83,6 +83,20 @@
         "null"
       ]
     },
+    "databricks_host": {
+      "description": "URL of the Databricks workspace used to look up tables in Unity Catalog\n(see `--unity-catalog`), e.g. `https://adb-1234567890123456.7.azuredatabricks.net`",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "databricks_token": {
+      "description": "Databricks access token used to look up tables in Unity Catalog.\nIt needs the `BROWSE` privilege on the catalog or schema of each referenced\ntable, or `USE CATALOG` and `USE SCHEMA` on them and `SELECT` on the table.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
     "default_extension": {
       "description": "Parse input sources without a recognised file type by using the given\nfile extension.\n\nThis affects how links are extracted from certain input sources. This\nis useful for stdin inputs, files without extensions, and files with\nunknown extensions.\n\nExamples:\n  --default-extension md\n  --default-extension html\n\nTo automatically append file extensions when locating files, see\n`--fallback-extensions`.",
       "type": [
@@ -491,8 +505,22 @@
       ],
       "default": null
     },
+    "sql_default_catalog": {
+      "description": "Catalog of table names in SQL code blocks which don't specify one, like\n`schema.table` (see `--unity-catalog`)",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "sql_default_schema": {
+      "description": "Schema of table names in SQL code blocks which don't specify one, like\n`table` (see `--unity-catalog`)",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
     "sql_dialect": {
-      "description": "SQL dialect used to parse SQL code blocks (see `--include-sql`)\n\n[default: generic]",
+      "description": "SQL dialect used to parse SQL code blocks (see `--include-sql`).\nWith `--unity-catalog`, the default is `databricks`.\n\n[default: generic]",
       "anyOf": [
         {
           "$ref": "#/definitions/SqlDialect"
@@ -537,6 +565,14 @@
       ],
       "format": "uint64",
       "minimum": 0
+    },
+    "unity_catalog": {
+      "description": "Check that the tables referenced in SQL code blocks exist in Databricks\nUnity Catalog. Implies `--include-sql`.\n\nThis checks the tables which valid SQL code reads from or writes into, using\nthe workspace given by `--databricks-host` and `--databricks-token`. Tables\nare reported as `uc:catalog.schema.table` URIs, so `--exclude` patterns\napply to them. Table names without a catalog or schema are qualified with\npreceding `USE` statements in the same file, or with `--sql-default-catalog`\nand `--sql-default-schema`. Otherwise, they are not checked.",
+      "type": [
+        "boolean",
+        "null"
+      ],
+      "default": null
     },
     "user_agent": {
       "description": "User agent\n\n[default: lychee/x.y.z]",

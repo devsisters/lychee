@@ -462,6 +462,19 @@ Options:
           cookie jar and sent with requests. New cookies will be stored in the cookie jar
           and existing cookies will be updated.
 
+      --databricks-host <URL>
+          URL of the Databricks workspace used to look up tables in Unity Catalog
+          (see `--unity-catalog`), e.g. `https://adb-1234567890123456.7.azuredatabricks.net`
+
+          [env: DATABRICKS_HOST]
+
+      --databricks-token <TOKEN>
+          Databricks access token used to look up tables in Unity Catalog.
+          It needs the `BROWSE` privilege on the catalog or schema of each referenced
+          table, or `USE CATALOG` and `USE SCHEMA` on them and `SELECT` on the table.
+
+          [env: DATABRICKS_TOKEN]
+
       --default-extension <EXTENSION>
           Parse input sources without a recognised file type by using the given
           file extension.
@@ -784,8 +797,16 @@ Options:
       --skip-missing[=<false|true>]
           Skip missing input files (default is to error if they don't exist)
 
+      --sql-default-catalog <CATALOG>
+          Catalog of table names in SQL code blocks which don't specify one, like
+          `schema.table` (see `--unity-catalog`)
+
+      --sql-default-schema <SCHEMA>
+          Schema of table names in SQL code blocks which don't specify one, like
+          `table` (see `--unity-catalog`)
+
       --sql-dialect <SQL_DIALECT>
-          SQL dialect used to parse SQL code blocks (see `--include-sql`)
+          SQL dialect used to parse SQL code blocks (see `--include-sql`). With `--unity-catalog`, the default is `databricks`.
 
           [default: generic]
 
@@ -812,6 +833,17 @@ Options:
           User agent
 
           [default: lychee/x.y.z]
+
+      --unity-catalog[=<false|true>]
+          Check that the tables referenced in SQL code blocks exist in Databricks
+          Unity Catalog. Implies `--include-sql`.
+
+          This checks the tables which valid SQL code reads from or writes into, using
+          the workspace given by `--databricks-host` and `--databricks-token`. Tables
+          are reported as `uc:catalog.schema.table` URIs, so `--exclude` patterns
+          apply to them. Table names without a catalog or schema are qualified with
+          preceding `USE` statements in the same file, or with `--sql-default-catalog`
+          and `--sql-default-schema`. Otherwise, they are not checked.
 
   -v, --verbose...
           Set verbosity level; more output per occurrence (e.g. `-v` or `-vv`)
@@ -871,6 +903,33 @@ fragments like a single `WHERE` clause. To keep code with placeholders valid,
 write placeholders as parameter markers like `:start_date` or `?` instead of
 template syntax like `{start_date}`. In dialects which support it, such as
 Databricks and Snowflake, names can be parameterized with `IDENTIFIER(:name)`.
+
+Databricks users can also check that the tables referenced by SQL code blocks
+exist in [Unity Catalog](https://docs.databricks.com/aws/en/data-governance/unity-catalog/)
+with `--unity-catalog`, which implies `--include-sql --sql-dialect databricks`:
+
+```sh
+export DATABRICKS_HOST=https://adb-1234567890123456.7.azuredatabricks.net
+export DATABRICKS_TOKEN=<personal access token>
+lychee --unity-catalog docs/
+```
+
+Tables are looked up with the [Table Exists API](https://docs.databricks.com/api/uc-tables/v1/table-exists).
+It requires the `BROWSE` privilege on the catalog or schema of each table, or
+`USE CATALOG` and `USE SCHEMA` on them and `SELECT` on the table. To use OAuth
+instead of a personal access token, set `DATABRICKS_TOKEN` to the output of
+`databricks auth token | jq -r .access_token`.
+
+Referenced tables are reported as `uc:catalog.schema.table` URIs, so they can be
+excluded like links, e.g. with `--exclude '^uc:hive_metastore\.'`. If you limit
+the checked schemes with `--scheme`, include `uc`. Table names without a catalog
+or schema are qualified with preceding `USE` statements in the same file, or
+with `--sql-default-catalog` and `--sql-default-schema`. Otherwise, they are not
+checked. Neither are tables created in the same file (e.g. with
+`CREATE TEMPORARY VIEW`), common table expressions, and names given with
+`IDENTIFIER(...)`. Ignored code blocks and statements which cannot be parsed
+don't count: tables they create and their `USE` statements are not taken into
+account.
 
 ### Caching
 

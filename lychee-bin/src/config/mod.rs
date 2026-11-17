@@ -28,13 +28,13 @@ use lychee_lib::ratelimit::HostConfigs;
 use lychee_lib::{
     BaseInfo, BasicAuthSelector, DEFAULT_MAX_REDIRECTS, DEFAULT_MAX_RETRIES,
     DEFAULT_RETRY_WAIT_TIME_SECS, DEFAULT_TIMEOUT_SECS, FileExtensions, FileType,
-    FragmentCheckerOptions, Input, Methods, StatusCodeSelector,
+    FragmentCheckerOptions, Input, Methods, StatusCodeSelector, UnityCatalogConfig,
     archive::Archive,
     sql::{SqlDialect, SqlOptions},
 };
 use lychee_lib::{DEFAULT_USER_AGENT, Preprocessor};
 use schemars::JsonSchema;
-use secrecy::SecretString;
+use secrecy::{ExposeSecret, SecretString};
 use serde::{Deserialize, Deserializer};
 use std::collections::{HashMap, HashSet};
 use std::num::NonZeroUsize;
@@ -722,7 +722,21 @@ pub(crate) struct Config {
     #[serde(default)]
     include_sql: Option<bool>,
 
-    /// SQL dialect used to parse SQL code blocks (see `--include-sql`)
+    /// Check that the tables referenced in SQL code blocks exist in Databricks
+    /// Unity Catalog. Implies `--include-sql`.
+    ///
+    /// This checks the tables which valid SQL code reads from or writes into, using
+    /// the workspace given by `--databricks-host` and `--databricks-token`. Tables
+    /// are reported as `uc:catalog.schema.table` URIs, so `--exclude` patterns
+    /// apply to them. Table names without a catalog or schema are qualified with
+    /// preceding `USE` statements in the same file, or with `--sql-default-catalog`
+    /// and `--sql-default-schema`. Otherwise, they are not checked.
+    #[arg(long, verbatim_doc_comment, optional_bool_flag())]
+    #[serde(default)]
+    unity_catalog: Option<bool>,
+
+    /// SQL dialect used to parse SQL code blocks (see `--include-sql`).
+    /// With `--unity-catalog`, the default is `databricks`.
     ///
     /// [default: generic]
     #[arg(long, value_parser = PossibleValuesParser::new(SqlDialect::VARIANTS).map(|s| s.parse::<SqlDialect>().unwrap()))]
@@ -735,6 +749,40 @@ pub(crate) struct Config {
     /// [default: sql]
     #[arg(long, value_delimiter = ',', verbatim_doc_comment)]
     sql_languages: Option<Vec<String>>,
+
+    /// Catalog of table names in SQL code blocks which don't specify one, like
+    /// `schema.table` (see `--unity-catalog`)
+    #[arg(long, value_name = "CATALOG", verbatim_doc_comment)]
+    pub(crate) sql_default_catalog: Option<String>,
+
+    /// Schema of table names in SQL code blocks which don't specify one, like
+    /// `table` (see `--unity-catalog`)
+    #[arg(long, value_name = "SCHEMA", verbatim_doc_comment)]
+    pub(crate) sql_default_schema: Option<String>,
+
+    /// URL of the Databricks workspace used to look up tables in Unity Catalog
+    /// (see `--unity-catalog`), e.g. `https://adb-1234567890123456.7.azuredatabricks.net`
+    #[arg(
+        long,
+        env = "DATABRICKS_HOST",
+        hide_env_values = true,
+        value_name = "URL",
+        verbatim_doc_comment
+    )]
+    pub(crate) databricks_host: Option<String>,
+
+    /// Databricks access token used to look up tables in Unity Catalog.
+    /// It needs the `BROWSE` privilege on the catalog or schema of each referenced
+    /// table, or `USE CATALOG` and `USE SCHEMA` on them and `SELECT` on the table.
+    #[arg(
+        long,
+        env = "DATABRICKS_TOKEN",
+        hide_env_values = true,
+        value_name = "TOKEN",
+        verbatim_doc_comment
+    )]
+    #[schemars(with = "Option<String>")]
+    pub(crate) databricks_token: Option<SecretString>,
 
     /// Preprocess input files with the given command.
     ///
@@ -942,13 +990,23 @@ impl Config {
         self.include_wikilinks.unwrap_or(false)
     }
 
+    /// Whether to check SQL code blocks, which `--unity-catalog` implies
     pub(crate) fn include_sql(&self) -> bool {
-        self.include_sql.unwrap_or(false)
+        self.include_sql.unwrap_or(false) || self.unity_catalog()
     }
 
-    /// SQL dialect used to parse SQL code blocks
+    pub(crate) fn unity_catalog(&self) -> bool {
+        self.unity_catalog.unwrap_or(false)
+    }
+
+    /// SQL dialect used to parse SQL code blocks. Unity Catalog belongs to
+    /// Databricks, so `--unity-catalog` changes the default dialect.
     pub(crate) fn sql_dialect(&self) -> SqlDialect {
-        self.sql_dialect.unwrap_or_default()
+        self.sql_dialect.unwrap_or(if self.unity_catalog() {
+            SqlDialect::Databricks
+        } else {
+            SqlDialect::default()
+        })
     }
 
     /// Languages of Markdown code blocks which contain SQL
@@ -964,7 +1022,44 @@ impl Config {
             SqlOptions::new()
                 .dialect(self.sql_dialect())
                 .languages(self.sql_languages())
+                .unity_catalog_tables(self.unity_catalog())
+                .default_catalog(self.sql_default_catalog.clone())
+                .default_schema(self.sql_default_schema.clone())
         })
+    }
+
+    /// The Databricks workspace used to look up tables in Unity Catalog.
+    ///
+    /// Returns `None` unless `--unity-catalog` is enabled. With `--offline` and
+    /// `--dump`, tables are not looked up, so no workspace is needed.
+    ///
+    /// # Errors
+    ///
+    /// Fails if `--unity-catalog` is enabled without a valid workspace URL or
+    /// an access token.
+    pub(crate) fn unity_catalog_config(&self) -> Result<Option<UnityCatalogConfig>> {
+        if !self.unity_catalog() || self.offline() || self.dump() {
+            return Ok(None);
+        }
+
+        // Like `GITHUB_TOKEN`, treat empty environment variables as unset.
+        let host = self
+            .databricks_host
+            .as_ref()
+            .filter(|host| !host.is_empty());
+        let token = self
+            .databricks_token
+            .as_ref()
+            .filter(|token| !token.expose_secret().is_empty());
+
+        match (host, token) {
+            (Some(host), Some(token)) => Ok(Some(UnityCatalogConfig::new(host, token.clone())?)),
+            _ => Err(anyhow!(
+                "`--unity-catalog` requires a Databricks workspace URL and access token. \
+                Set the DATABRICKS_HOST and DATABRICKS_TOKEN environment variables, \
+                or use `--databricks-host` and `--databricks-token`."
+            )),
+        }
     }
 
     pub(crate) fn insecure(&self) -> bool {
@@ -1042,6 +1137,8 @@ impl Config {
                 cache_exclude_status,
                 cache_location,
                 cookie_jar,
+                databricks_host,
+                databricks_token,
                 default_extension,
                 dump,
                 dump_inputs,
@@ -1073,6 +1170,8 @@ impl Config {
                 require_https,
                 root_dir,
                 skip_missing,
+                sql_default_catalog,
+                sql_default_schema,
                 sql_dialect,
                 sql_languages,
                 suggest,
@@ -1088,6 +1187,7 @@ impl Config {
                 mode,
                 retry_wait_time,
                 timeout,
+                unity_catalog,
                 user_agent,
             },
             chain {
@@ -1282,6 +1382,46 @@ This convention also simplifies our default value testing."
                     .languages(vec!["sql".to_string(), "pgsql".to_string()])
             )
         );
+    }
+
+    #[test]
+    fn test_unity_catalog_options() {
+        let p = parse_options(vec!["lychee", "-"]);
+        assert!(!p.config.include_sql());
+        assert!(p.config.sql_options().is_none());
+        assert!(p.config.unity_catalog_config().unwrap().is_none());
+
+        let p = parse_options(vec!["lychee", "-", "--include-sql"]);
+        assert_eq!(p.config.sql_dialect(), SqlDialect::Generic);
+        assert_eq!(
+            p.config.sql_options(),
+            Some(SqlOptions::new().languages(vec!["sql".to_string()]))
+        );
+
+        // `--unity-catalog` implies `--include-sql` and the Databricks dialect.
+        let args = [
+            "--unity-catalog",
+            "--databricks-host=dbc-1.cloud.databricks.com",
+        ];
+        let p = parse_options([&["lychee", "-"], &args[..], &["--databricks-token=x"]].concat());
+        assert!(p.config.include_sql());
+        assert_eq!(p.config.sql_dialect(), SqlDialect::Databricks);
+        assert!(p.config.unity_catalog_config().unwrap().is_some());
+
+        let p = parse_options([&["lychee", "-", "--sql-dialect=spark"], &args[..]].concat());
+        assert_eq!(p.config.sql_dialect(), SqlDialect::Spark);
+
+        // Credentials are required to check tables, and empty values are unset.
+        let p = parse_options([&["lychee", "-"], &args[..]].concat());
+        assert!(p.config.unity_catalog_config().is_err());
+        let p = parse_options([&["lychee", "-", "--databricks-token="], &args[..]].concat());
+        assert!(p.config.unity_catalog_config().is_err());
+
+        // ...but not when tables aren't looked up.
+        for flag in ["--offline", "--dump"] {
+            let p = parse_options([&["lychee", "-", flag], &args[..]].concat());
+            assert!(p.config.unity_catalog_config().unwrap().is_none());
+        }
     }
 
     #[test]

@@ -219,7 +219,11 @@ impl Status {
             | Status::Timeout(Some(code))
             | Status::Cached(CacheStatus::Ok(code) | CacheStatus::Error(Some(code))) => Some(*code),
             Status::Error(kind) | Status::Unsupported(kind) => match kind {
-                ErrorKind::RejectedStatusCode(status_code) => Some(*status_code),
+                ErrorKind::RejectedStatusCode(status_code)
+                | ErrorKind::UnityCatalogApi {
+                    status: status_code,
+                    ..
+                } => Some(*status_code),
                 _ => match kind.reqwest_error() {
                     Some(error) => error.status(),
                     None => None,
@@ -237,7 +241,8 @@ impl Status {
             Status::UnknownMailStatus(_) => "UNKNOWN".to_string(),
             Status::Excluded => "EXCLUDED".to_string(),
             Status::Error(e) => match e {
-                ErrorKind::RejectedStatusCode(code) => code.as_u16().to_string(),
+                ErrorKind::RejectedStatusCode(code)
+                | ErrorKind::UnityCatalogApi { status: code, .. } => code.as_u16().to_string(),
                 ErrorKind::ReadResponseBody(e) | ErrorKind::BuildRequestClient(e) => {
                     match e.status() {
                         Some(code) => code.as_u16().to_string(),

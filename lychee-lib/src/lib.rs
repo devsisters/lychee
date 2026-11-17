@@ -89,6 +89,7 @@ pub use crate::{
     basic_auth::BasicAuthExtractor,
     // Expose the `Handler` trait to allow defining external handlers (plugins)
     chain::{ChainResult, Handler},
+    checker::unity_catalog::UnityCatalogConfig,
     // Constants get exposed so that the CLI can use the same defaults as the library
     client::{
         Client, ClientBuilder, DEFAULT_MAX_REDIRECTS, DEFAULT_MAX_RETRIES,

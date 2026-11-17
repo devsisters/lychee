@@ -180,6 +180,8 @@ fn cache_hit(
 /// should not be cached.
 fn should_ignore(uri: &Uri, status: &Status, cache_exclude_status: &HashSet<StatusCode>) -> bool {
     // - Never cache filesystem access as it is fast already so caching has no benefit.
+    // - Never cache Unity Catalog tables: their status depends on the configured
+    //   Databricks workspace, which is not part of the URI.
     // - Skip caching unsupported URLs as they might be supported in a future run.
     // - Skip caching excluded links; they might not be excluded in the next run.
     // - Skip caching links for which the status code has been explicitly excluded from the cache.
@@ -189,6 +191,7 @@ fn should_ignore(uri: &Uri, status: &Status, cache_exclude_status: &HashSet<Stat
         .is_some_and(|code| cache_exclude_status.contains(&code));
 
     uri.is_file()
+        || uri.is_unity_catalog()
         || status.is_excluded()
         || status.is_unsupported()
         || status.is_unknown()
@@ -407,6 +410,16 @@ mod tests {
     fn test_cache_ignore_file_urls() {
         assert!(should_ignore(
             &Uri::try_from("file:///home").unwrap(),
+            &Status::Ok(StatusCode::OK),
+            &HashSet::default()
+        ));
+    }
+
+    #[test]
+    // Cache is ignored for Unity Catalog tables, which depend on the workspace
+    fn test_cache_ignore_unity_catalog_tables() {
+        assert!(should_ignore(
+            &Uri::try_from("uc:main.sales.orders").unwrap(),
             &Status::Ok(StatusCode::OK),
             &HashSet::default()
         ));

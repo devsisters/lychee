@@ -216,6 +216,20 @@ sql_dialect = "databricks"
 # Languages of Markdown code blocks which contain SQL.
 sql_languages = ["sql", "sparksql"]
 
+# Check that the tables referenced in SQL code blocks exist in Databricks
+# Unity Catalog. Implies `include_sql`.
+unity_catalog = true
+
+# Catalog and schema of table names which don't specify them.
+sql_default_catalog = "main"
+sql_default_schema = "default"
+
+# Databricks workspace used to look up tables in Unity Catalog. Consider using
+# the DATABRICKS_HOST and DATABRICKS_TOKEN environment variables instead, so
+# that the token is not stored in the config file.
+databricks_host = "https://adb-1234567890123456.7.azuredatabricks.net"
+databricks_token = "secret"
+
 #############################  Other  #############################
 
 # Read input filenames from the given file or stdin ('-')

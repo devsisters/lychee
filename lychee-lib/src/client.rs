@@ -29,9 +29,12 @@ use secrecy::{ExposeSecret, SecretString};
 use typed_builder::TypedBuilder;
 
 use crate::{
-    BaseInfo, ErrorKind, Methods, Request, Response, Result, Status, Uri,
+    BaseInfo, ErrorKind, Methods, Request, Response, Result, Status, UnityCatalogConfig, Uri,
     chain::RequestChain,
-    checker::{file::FileChecker, mail::MailChecker, website::WebsiteChecker},
+    checker::{
+        file::FileChecker, mail::MailChecker, unity_catalog::UnityCatalogChecker,
+        website::WebsiteChecker,
+    },
     filter::Filter,
     ratelimit::{ClientMap, HostConfigs, HostKey, HostPool, RateLimitConfig},
     remap::Remaps,
@@ -339,6 +342,12 @@ pub struct ClientBuilder {
 
     /// Basic auth credentials extractor.
     basic_auth: BasicAuthExtractor,
+
+    /// Databricks workspace used to check whether tables referenced in SQL
+    /// code blocks (`uc:` URIs, see [`crate::sql`]) exist in Unity Catalog.
+    ///
+    /// Without a workspace, `uc:` URIs are reported as unsupported.
+    unity_catalog: Option<UnityCatalogConfig>,
 }
 
 impl Default for ClientBuilder {
@@ -372,12 +381,12 @@ impl ClientBuilder {
 
         let client_map = self.build_host_clients(&redirect_history)?;
 
-        let host_pool = HostPool::new(
+        let host_pool = Arc::new(HostPool::new(
             self.rate_limit_config,
             self.hosts,
             reqwest_client,
             client_map,
-        );
+        ));
 
         let github_client = match self.github_token.as_ref().map(ExposeSecret::expose_secret) {
             Some(token) if !token.is_empty() => Some(
@@ -403,6 +412,13 @@ impl ClientBuilder {
             include_mail: self.include_mail,
         };
 
+        let unity_catalog_checker = UnityCatalogChecker::new(
+            self.unity_catalog,
+            Arc::clone(&host_pool),
+            self.max_retries,
+            self.retry_wait_time,
+        );
+
         let website_checker = WebsiteChecker::new(
             self.method,
             self.retry_wait_time,
@@ -413,7 +429,7 @@ impl ClientBuilder {
             self.require_https,
             self.plugin_request_chain,
             self.fragment_checker_options,
-            Arc::new(host_pool),
+            host_pool,
             self.basic_auth,
         );
 
@@ -421,6 +437,7 @@ impl ClientBuilder {
             remaps: self.remaps,
             filter,
             email_checker: MailChecker::new(self.timeout),
+            unity_catalog_checker,
             website_checker,
             file_checker: FileChecker::new(
                 &self.base,
@@ -530,6 +547,9 @@ pub struct Client {
 
     /// A checker for email URLs.
     email_checker: MailChecker,
+
+    /// A checker for Unity Catalog table references (`uc:` URIs).
+    unity_catalog_checker: UnityCatalogChecker,
 }
 
 impl Client {
@@ -571,6 +591,7 @@ impl Client {
             _ if uri.is_tel() => (Status::Excluded, None), // We don't check tel: URIs
             _ if uri.is_file() => (self.check_file(&uri).await, None),
             _ if uri.is_mail() => (self.check_mail(&uri).await, None),
+            _ if uri.is_unity_catalog() => (self.check_unity_catalog(&uri).await, None),
             _ => self.check_website(&uri).await,
         };
 
@@ -632,6 +653,12 @@ impl Client {
     /// Checks a `mailto` URI.
     pub async fn check_mail(&self, uri: &Uri) -> Status {
         self.email_checker.check_mail(uri).await
+    }
+
+    /// Checks whether the table referenced by a `uc:` URI exists in Unity
+    /// Catalog.
+    pub async fn check_unity_catalog(&self, uri: &Uri) -> Status {
+        self.unity_catalog_checker.check(uri).await
     }
 }
 
