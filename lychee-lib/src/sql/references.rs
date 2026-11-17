@@ -5,8 +5,8 @@ use std::ops::ControlFlow;
 
 use log::debug;
 use sqlparser::ast::{
-    CreateTableLikeKind, ObjectName, ObjectNamePart, Query, Statement, TableFactor, TableObject,
-    Use, Visit, Visitor,
+    CreateTableLikeKind, ObjectName, Query, Spanned, Statement, TableFactor, TableObject, Use,
+    Visit, Visitor,
 };
 use sqlparser::tokenizer::Location;
 
@@ -196,22 +196,9 @@ impl CommonTableExpressions {
 
 impl Relations {
     fn add(&mut self, name: &ObjectName) {
-        let Some(idents) = name
-            .0
-            .iter()
-            .map(ObjectNamePart::as_ident)
-            .collect::<Option<Vec<_>>>()
-        else {
+        let Some(parts) = name_parts(name) else {
             return;
         };
-        let Some(first) = idents.first() else {
-            return;
-        };
-
-        let parts: Vec<String> = idents
-            .iter()
-            .map(|ident| ident.value.to_lowercase())
-            .collect();
 
         // Names like `` delta.`/data/events` `` refer to files, not tables.
         if !parts.iter().all(|part| is_valid_name_part(part)) {
@@ -219,15 +206,15 @@ impl Relations {
             return;
         }
 
-        if let [name] = parts.as_slice()
-            && self.ctes.iter().any(|ctes| ctes.contains(name))
+        if let [table] = parts.as_slice()
+            && self.ctes.iter().any(|ctes| ctes.contains(table))
         {
             return;
         }
 
         self.found.push(Relation {
             parts,
-            location: first.span.start,
+            location: name.span().start,
         });
     }
 }
