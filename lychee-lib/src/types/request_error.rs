@@ -2,7 +2,7 @@ use std::convert::TryFrom;
 use std::sync::LazyLock;
 use thiserror::Error;
 
-use crate::{ErrorKind, RawUri, Response, Status, Uri};
+use crate::{ErrorKind, RawUri, RawUriSpan, Response, Status, Uri};
 use crate::{InputSource, ResolvedInputSource};
 
 static ERROR_URI: LazyLock<Uri> = LazyLock::new(|| Uri::try_from("error:").unwrap());
@@ -28,6 +28,11 @@ pub enum RequestError {
     /// This is for errors that happen after the input content was loaded.
     #[error("Error processing input '{0}': {1}")]
     InputSourceError(InputSource, #[source] Box<ErrorKind>),
+
+    /// A SQL code block within the given source cannot be parsed.
+    /// The span points to the location of the syntax error.
+    #[error("Invalid SQL code block in '{0}' at {1}: {2}")]
+    InvalidSql(ResolvedInputSource, RawUriSpan, #[source] Box<ErrorKind>),
 }
 
 impl RequestError {
@@ -38,7 +43,8 @@ impl RequestError {
             Self::CreateRequestItem(_, _, e)
             | Self::GetInputContent(_, e)
             | Self::UserInputContent(_, e)
-            | Self::InputSourceError(_, e) => e,
+            | Self::InputSourceError(_, e)
+            | Self::InvalidSql(_, _, e) => e,
         }
     }
 
@@ -49,7 +55,8 @@ impl RequestError {
             Self::CreateRequestItem(_, _, e)
             | Self::GetInputContent(_, e)
             | Self::UserInputContent(_, e)
-            | Self::InputSourceError(_, e) => *e,
+            | Self::InputSourceError(_, e)
+            | Self::InvalidSql(_, _, e) => *e,
         }
     }
 
@@ -57,7 +64,7 @@ impl RequestError {
     #[must_use]
     pub fn input_source(&self) -> InputSource {
         match self {
-            Self::CreateRequestItem(_, src, _) => src.clone().into(),
+            Self::CreateRequestItem(_, src, _) | Self::InvalidSql(src, _, _) => src.clone().into(),
             Self::GetInputContent(src, _)
             | Self::UserInputContent(src, _)
             | Self::InputSourceError(src, _) => src.clone(),
@@ -79,6 +86,7 @@ impl RequestError {
                 let src = e.input_source();
                 let span = match &e {
                     RequestError::CreateRequestItem(raw, _, _) => Some(raw.span),
+                    RequestError::InvalidSql(_, span, _) => Some(*span),
                     _ => None,
                 };
 

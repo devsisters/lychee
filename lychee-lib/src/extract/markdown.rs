@@ -19,7 +19,7 @@ use super::html::html5gum::extract_html_fragments;
 
 /// Returns the default markdown extensions used by lychee.
 /// Sadly, `|` is not const for `Options` so we can't use a const global.
-fn md_extensions() -> Options {
+pub(crate) fn md_extensions() -> Options {
     Options::ENABLE_HEADING_ATTRIBUTES
         | Options::ENABLE_MATH
         | Options::ENABLE_WIKILINKS

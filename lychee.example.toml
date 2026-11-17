@@ -205,6 +205,17 @@ offline = true
 # Accept timed out requests
 accept_timeouts = true
 
+#############################  SQL  ###############################
+
+# Check SQL code blocks in Markdown files for syntax errors.
+include_sql = true
+
+# SQL dialect used to parse SQL code blocks.
+sql_dialect = "databricks"
+
+# Languages of Markdown code blocks which contain SQL.
+sql_languages = ["sql", "sparksql"]
+
 #############################  Other  #############################
 
 # Read input filenames from the given file or stdin ('-')

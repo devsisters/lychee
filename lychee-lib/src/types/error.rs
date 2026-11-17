@@ -194,6 +194,10 @@ pub enum ErrorKind {
     /// Invalid base URL for `WikiLink` checking
     #[error("Invalid base URL for WikiLink checking: {0}")]
     WikilinkInvalidBase(String),
+
+    /// A SQL code block cannot be parsed
+    #[error("SQL syntax error: {0}")]
+    InvalidSql(String),
 }
 
 impl ErrorKind {
@@ -321,6 +325,7 @@ impl ErrorKind {
             | ErrorKind::EmptyUrl
             | ErrorKind::InvalidUrlHost
             | ErrorKind::RootRelativeLinkWithoutRoot(_)
+            | ErrorKind::InvalidSql(_)
             | ErrorKind::PreprocessorError {
                 command: _,
                 reason: _,
@@ -402,6 +407,7 @@ impl PartialEq for ErrorKind {
             (Self::InvalidUrlRemap(r1), Self::InvalidUrlRemap(r2)) => r1 == r2,
             (Self::EmptyUrl, Self::EmptyUrl) => true,
             (Self::RejectedStatusCode(c1), Self::RejectedStatusCode(c2)) => c1 == c2,
+            (Self::InvalidSql(m1), Self::InvalidSql(m2)) => m1 == m2,
 
             _ => false,
         }
@@ -459,6 +465,7 @@ impl Hash for ErrorKind {
             Self::PreprocessorError { command, reason } => (command, reason).hash(state),
             Self::WikilinkNotFound(uri, pathbuf) => (uri, pathbuf).hash(state),
             Self::WikilinkInvalidBase(e) => e.hash(state),
+            Self::InvalidSql(message) => message.hash(state),
         }
     }
 }

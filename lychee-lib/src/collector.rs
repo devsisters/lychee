@@ -1,6 +1,7 @@
 use crate::Preprocessor;
 use crate::filter::PathExcludes;
 use crate::ratelimit::HostPool;
+use crate::sql::{self, SqlOptions};
 use crate::types::resolver::UrlContentResolver;
 use crate::{
     BaseInfo, Input, LycheeResult, Request, RequestError, basic_auth::BasicAuthExtractor,
@@ -44,6 +45,8 @@ pub struct Collector {
     /// limits, and custom headers.
     host_pool: Arc<HostPool>,
     preprocessor: Option<Preprocessor>,
+    /// Check SQL code blocks with these options, see [`crate::sql`].
+    sql_options: Option<SqlOptions>,
 }
 
 impl Default for Collector {
@@ -68,6 +71,7 @@ impl Default for Collector {
             host_pool: Arc::new(HostPool::default()),
             excluded_paths: PathExcludes::empty(),
             preprocessor: None,
+            sql_options: None,
         }
     }
 }
@@ -121,6 +125,7 @@ impl Collector {
             headers: HeaderMap::new(),
             host_pool: Arc::new(HostPool::default()),
             excluded_paths: PathExcludes::empty(),
+            sql_options: None,
             root_dir,
             base,
         })
@@ -199,6 +204,16 @@ impl Collector {
     #[must_use]
     pub fn preprocessor(mut self, preprocessor: Option<Preprocessor>) -> Self {
         self.preprocessor = preprocessor;
+        self
+    }
+
+    /// Check SQL code blocks in Markdown files (if `Some`).
+    ///
+    /// Code which cannot be parsed is returned as a [`RequestError`]. See
+    /// [`crate::sql`] for details.
+    #[must_use]
+    pub fn sql_options(mut self, sql_options: Option<SqlOptions>) -> Self {
+        self.sql_options = sql_options;
         self
     }
 
@@ -281,11 +296,15 @@ impl Collector {
             .par_then_unordered(None, move |content| {
                 let global_base = global_base.clone();
                 let root_dir = self.root_dir.clone();
+                let sql_options = self.sql_options.clone();
                 async move {
                     let content = content?;
                     let uris: Vec<RawUri> = extractor.extract(&content);
-                    let requests =
+                    let mut requests =
                         request::create(uris, &content.source, root_dir.as_deref(), &global_base);
+                    if let Some(sql_options) = &sql_options {
+                        requests.extend(sql::extract_requests(&content, sql_options));
+                    }
                     Result::Ok(stream::iter(requests))
                 }
             })

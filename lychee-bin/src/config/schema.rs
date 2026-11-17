@@ -132,6 +132,16 @@ pub(super) enum Archive {
     WaybackMachine,
 }
 
+/// SQL dialects supported for parsing SQL code blocks.
+#[derive(JsonSchema)]
+#[schemars(transparent)]
+pub(super) struct SqlDialect(#[schemars(schema_with = "sql_dialect_schema")] String);
+
+fn sql_dialect_schema(_: &mut SchemaGenerator) -> Schema {
+    use strum::VariantNames;
+    json_schema!({ "type": "string", "enum": lychee_lib::sql::SqlDialect::VARIANTS })
+}
+
 /// File-based preprocessor configuration.
 #[derive(JsonSchema)]
 pub(super) struct Preprocessor {

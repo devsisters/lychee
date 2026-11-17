@@ -291,6 +291,14 @@
       ],
       "default": null
     },
+    "include_sql": {
+      "description": "Check SQL code blocks in Markdown files for syntax errors.\n\nCode blocks with a SQL language (see `--sql-languages`) are parsed with the\n`--sql-dialect` parser, and code which cannot be parsed is reported as an error.\nTo skip a code block, add `ignore` to its info string, e.g. `sql ignore`.",
+      "type": [
+        "boolean",
+        "null"
+      ],
+      "default": null
+    },
     "include_verbatim": {
       "description": "Find links in verbatim sections like `pre`- and `code` blocks",
       "type": [
@@ -482,6 +490,27 @@
         "null"
       ],
       "default": null
+    },
+    "sql_dialect": {
+      "description": "SQL dialect used to parse SQL code blocks (see `--include-sql`)\n\n[default: generic]",
+      "anyOf": [
+        {
+          "$ref": "#/definitions/SqlDialect"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "sql_languages": {
+      "description": "Languages of Markdown code blocks which contain SQL (see `--include-sql`).\nMultiple languages can be separated by commas.\n\n[default: sql]",
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "type": "string"
+      }
     },
     "suggest": {
       "description": "Suggest link replacements for broken links, using a web archive.\nThe web archive can be specified with `--archive`",
@@ -688,6 +717,28 @@
       },
       "required": [
         "command"
+      ]
+    },
+    "SqlDialect": {
+      "description": "SQL dialects supported for parsing SQL code blocks.",
+      "type": "string",
+      "enum": [
+        "ansi",
+        "bigquery",
+        "clickhouse",
+        "databricks",
+        "duckdb",
+        "generic",
+        "hive",
+        "mssql",
+        "mysql",
+        "oracle",
+        "postgresql",
+        "redshift",
+        "snowflake",
+        "spark",
+        "sqlite",
+        "teradata"
       ]
     },
     "StatsFormat": {
