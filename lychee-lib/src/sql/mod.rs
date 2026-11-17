@@ -197,7 +197,7 @@ SELECT * FROM {{ table }}
 ```
 
 ```python
-spark.sql('SELEC 1')
+spark.sql('PICK 1')
 ```
 ";
 
@@ -246,7 +246,7 @@ spark.sql('SELEC 1')
 
     #[test]
     fn test_no_requests_for_other_file_types() {
-        let content = InputContent::from_string("```sql\nSELEC 1\n```", FileType::Html);
+        let content = InputContent::from_string("```sql\nPICK 1\n```", FileType::Html);
         assert!(extract_requests(&content, &SqlOptions::new()).is_empty());
     }
 }

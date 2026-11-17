@@ -24,5 +24,5 @@ SELECT * FROM {{ table }}
 Other languages are not checked:
 
 ```python
-spark.sql("SELEC 1")
+spark.sql("PICK 1")
 ```

@@ -75,7 +75,7 @@ mod sql {
 
     #[test]
     fn test_sql_languages() {
-        let markdown = "```sql\nSELEC 1\n```\n\n```SparkSQL\nSELEC 2\n```\n";
+        let markdown = "```sql\nPICK 1\n```\n\n```SparkSQL\nPICK 2\n```\n";
 
         lychee()
             .args(["--include-sql", "--sql-languages=sparksql"])
