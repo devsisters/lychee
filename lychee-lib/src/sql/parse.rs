@@ -36,11 +36,12 @@ pub(crate) fn parse(sql: &str, dialect: &dyn Dialect) -> Vec<Result<Statement, S
             break;
         }
 
+        let start = parser.index();
         match parse_statement(&mut parser) {
             Ok(statement) => statements.push(Ok(statement)),
             Err(error) => {
                 statements.push(Err(syntax_error(&error, sql)));
-                skip_statement(&mut parser);
+                skip_statement(&mut parser, start);
             }
         }
     }
@@ -57,8 +58,14 @@ fn parse_statement(parser: &mut Parser<'_>) -> Result<Statement, ParserError> {
 }
 
 /// Skip the rest of a statement which cannot be parsed, up to and including
-/// the next `;`.
-fn skip_statement(parser: &mut Parser<'_>) {
+/// the next `;`. `start` is the parser's token index at the start of the
+/// statement.
+fn skip_statement(parser: &mut Parser<'_>, start: usize) {
+    // The parser may have consumed the `;` already, like in `SELECT 1 +;`, where
+    // it expects an expression after the `+`. The next statement starts after it.
+    if parser.index() > start && parser.get_current_token().token == Token::SemiColon {
+        return;
+    }
     while !matches!(parser.next_token().token, Token::SemiColon | Token::EOF) {}
 }
 
@@ -187,15 +194,35 @@ mod tests {
     fn test_statements_are_parsed_separately() {
         assert_eq!(
             results(
-                "SELEC 1;
+                "PICK 1;
                  SELECT * FROM orders;
                  VACUUM orders RETAIN 168 HOURS;
                  SELECT * FROM customers"
             ),
             [
-                "1:1 Expected: an SQL statement, found: SELEC",
+                "1:1 Expected: an SQL statement, found: PICK",
                 "OK",
                 "3:32 Expected: end of statement, found: RETAIN",
+                "OK",
+            ]
+        );
+    }
+
+    #[test]
+    fn test_statement_after_consumed_semicolon() {
+        // When the parser expects an expression, it consumes the `;` which
+        // ends the statement. The next statement must not be skipped.
+        assert_eq!(
+            results(
+                "SELECT 1 +;
+SELECT * FORM t;
+SELECT * FROM t WHERE;
+SELECT 2"
+            ),
+            [
+                "1:11 Expected: an expression, found: ;",
+                "2:10 Expected: end of statement, found: FORM",
+                "3:22 Expected: an expression, found: ;",
                 "OK",
             ]
         );
