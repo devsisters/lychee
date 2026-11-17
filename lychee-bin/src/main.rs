@@ -394,6 +394,7 @@ async fn run(opts: &LycheeOptions) -> Result<i32> {
         // File a bug if you rely on this envvar! It's going to go away eventually.
         .use_html5ever(std::env::var("LYCHEE_USE_HTML5EVER").is_ok_and(|x| x == "1"))
         .include_wikilinks(opts.config.include_wikilinks())
+        .sql_options(opts.config.sql_options())
         .preprocessor(opts.config.preprocess.clone())
         .host_pool(client.host_pool());
 

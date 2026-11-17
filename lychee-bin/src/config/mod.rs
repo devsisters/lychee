@@ -28,7 +28,9 @@ use lychee_lib::ratelimit::HostConfigs;
 use lychee_lib::{
     BaseInfo, BasicAuthSelector, DEFAULT_MAX_REDIRECTS, DEFAULT_MAX_RETRIES,
     DEFAULT_RETRY_WAIT_TIME_SECS, DEFAULT_TIMEOUT_SECS, FileExtensions, FileType,
-    FragmentCheckerOptions, Input, Methods, StatusCodeSelector, archive::Archive,
+    FragmentCheckerOptions, Input, Methods, StatusCodeSelector,
+    archive::Archive,
+    sql::{SqlDialect, SqlOptions},
 };
 use lychee_lib::{DEFAULT_USER_AGENT, Preprocessor};
 use schemars::JsonSchema;
@@ -711,6 +713,29 @@ pub(crate) struct Config {
     #[serde(default)]
     include_wikilinks: Option<bool>,
 
+    /// Check SQL code blocks in Markdown files for syntax errors.
+    ///
+    /// Code blocks with a SQL language (see `--sql-languages`) are parsed with the
+    /// `--sql-dialect` parser, and code which cannot be parsed is reported as an error.
+    /// To skip a code block, add `ignore` to its info string, e.g. `sql ignore`.
+    #[arg(long, verbatim_doc_comment, optional_bool_flag())]
+    #[serde(default)]
+    include_sql: Option<bool>,
+
+    /// SQL dialect used to parse SQL code blocks (see `--include-sql`)
+    ///
+    /// [default: generic]
+    #[arg(long, value_parser = PossibleValuesParser::new(SqlDialect::VARIANTS).map(|s| s.parse::<SqlDialect>().unwrap()))]
+    #[schemars(with = "Option<schema::SqlDialect>")]
+    sql_dialect: Option<SqlDialect>,
+
+    /// Languages of Markdown code blocks which contain SQL (see `--include-sql`).
+    /// Multiple languages can be separated by commas.
+    ///
+    /// [default: sql]
+    #[arg(long, value_delimiter = ',', verbatim_doc_comment)]
+    sql_languages: Option<Vec<String>>,
+
     /// Preprocess input files with the given command.
     ///
     /// For each file input, this flag causes lychee to execute `COMMAND PATH` and process
@@ -917,6 +942,31 @@ impl Config {
         self.include_wikilinks.unwrap_or(false)
     }
 
+    pub(crate) fn include_sql(&self) -> bool {
+        self.include_sql.unwrap_or(false)
+    }
+
+    /// SQL dialect used to parse SQL code blocks
+    pub(crate) fn sql_dialect(&self) -> SqlDialect {
+        self.sql_dialect.unwrap_or_default()
+    }
+
+    /// Languages of Markdown code blocks which contain SQL
+    pub(crate) fn sql_languages(&self) -> Vec<String> {
+        self.sql_languages
+            .clone()
+            .unwrap_or_else(|| vec!["sql".to_string()])
+    }
+
+    /// Options for checking SQL code blocks, if enabled
+    pub(crate) fn sql_options(&self) -> Option<SqlOptions> {
+        self.include_sql().then(|| {
+            SqlOptions::new()
+                .dialect(self.sql_dialect())
+                .languages(self.sql_languages())
+        })
+    }
+
     pub(crate) fn insecure(&self) -> bool {
         self.insecure.unwrap_or(false)
     }
@@ -1009,6 +1059,7 @@ impl Config {
                 host_stats,
                 include_fragments,
                 include_mail,
+                include_sql,
                 include_verbatim,
                 include_wikilinks,
                 index_files,
@@ -1022,6 +1073,8 @@ impl Config {
                 require_https,
                 root_dir,
                 skip_missing,
+                sql_dialect,
+                sql_languages,
                 suggest,
                 threads,
                 extensions,
@@ -1172,6 +1225,8 @@ This convention also simplifies our default value testing."
             max_retries,
             mode,
             retry_wait_time,
+            sql_dialect,
+            sql_languages,
             timeout,
         );
 
@@ -1202,6 +1257,31 @@ This convention also simplifies our default value testing."
         // They default to `false`
         let default = parse_options(vec!["lychee", "-"]);
         assert_eq!(default.config.dump(), false);
+    }
+
+    #[test]
+    fn test_sql_options() {
+        let p = parse_options(vec!["lychee", "-"]);
+        assert!(p.config.sql_options().is_none());
+
+        let p = parse_options(vec!["lychee", "-", "--include-sql"]);
+        assert_eq!(p.config.sql_options(), Some(SqlOptions::new()));
+
+        let p = parse_options(vec![
+            "lychee",
+            "-",
+            "--include-sql",
+            "--sql-dialect=postgresql",
+            "--sql-languages=sql,pgsql",
+        ]);
+        assert_eq!(
+            p.config.sql_options(),
+            Some(
+                SqlOptions::new()
+                    .dialect(SqlDialect::PostgreSql)
+                    .languages(vec!["sql".to_string(), "pgsql".to_string()])
+            )
+        );
     }
 
     #[test]

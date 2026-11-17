@@ -639,6 +639,13 @@ Options:
       --include-mail[=<false|true>]
           Also check email addresses
 
+      --include-sql[=<false|true>]
+          Check SQL code blocks in Markdown files for syntax errors.
+
+          Code blocks with a SQL language (see `--sql-languages`) are parsed with the
+          `--sql-dialect` parser, and code which cannot be parsed is reported as an error.
+          To skip a code block, add `ignore` to its info string, e.g. `sql ignore`.
+
       --include-verbatim[=<false|true>]
           Find links in verbatim sections like `pre`- and `code` blocks
 
@@ -777,6 +784,19 @@ Options:
       --skip-missing[=<false|true>]
           Skip missing input files (default is to error if they don't exist)
 
+      --sql-dialect <SQL_DIALECT>
+          SQL dialect used to parse SQL code blocks (see `--include-sql`)
+
+          [default: generic]
+
+          [possible values: ansi, bigquery, clickhouse, databricks, duckdb, generic, hive, mssql, mysql, oracle, postgresql, redshift, snowflake, spark, sqlite, teradata]
+
+      --sql-languages <SQL_LANGUAGES>
+          Languages of Markdown code blocks which contain SQL (see `--include-sql`).
+          Multiple languages can be separated by commas.
+
+          [default: sql]
+
       --suggest[=<false|true>]
           Suggest link replacements for broken links, using a web archive. The web archive can be specified with `--archive`
 
@@ -829,6 +849,28 @@ them into a file called `.lycheeignore`.
 To exclude files and directories from being scanned use `--exclude-path`.
 For more detailed explanations, check out our comprehensive
 [guide on excluding links](https://lychee.cli.rs/recipes/excluding-links/).
+
+### Checking SQL code blocks
+
+With `--include-sql`, lychee parses the SQL code blocks of Markdown files
+(` ```sql ` by default, see `--sql-languages`) and reports code which cannot be
+parsed, like broken links. Set the SQL dialect with `--sql-dialect`, e.g.
+`postgresql`, `bigquery`, `snowflake`, or `databricks`. Since lychee uses
+[sqlparser](https://github.com/apache/datafusion-sqlparser-rs) to parse SQL,
+code with syntax which sqlparser doesn't support is reported as well. To skip
+a code block entirely, add `ignore` to its info string:
+
+````markdown
+```sql ignore
+SELECT * FROM {{ table }}
+```
+````
+
+Code blocks should contain complete statements, so `ignore` is meant for
+fragments like a single `WHERE` clause. To keep code with placeholders valid,
+write placeholders as parameter markers like `:start_date` or `?` instead of
+template syntax like `{start_date}`. In dialects which support it, such as
+Databricks and Snowflake, names can be parameterized with `IDENTIFIER(:name)`.
 
 ### Caching
 
